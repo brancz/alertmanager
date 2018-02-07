@@ -34,6 +34,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
@@ -162,9 +163,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	var mrouter *mesh.Router
+	var mlist *memberlist.Memberlist
 	if *meshListen != "" {
-		mrouter, err = initMesh(*meshListen, *hwaddr, *nickname, *password, log.With(logger, "component", "mesh"))
+		host, portString, err := net.SplitHostPort(*meshListen)
+		if err != nil {
+			level.Error(logger).Log("msg", "Unable to split specified mesh listen address into host and port")
+			os.Exit(1)
+		}
+
+		port, err := strconv.Atoi(portString)
+		if err != nil {
+			level.Error(logger).Log("msg", "Unable to convert port string to int")
+			os.Exit(1)
+		}
+
+		mcfg := memberlist.DefaultLocalConfig()
+		mcfg.Name = *hwaddr
+		mcfg.BindAddr = host
+		mcfg.BindPort = port
+
+		if *password != "" {
+			mcfg.SecretKey = []byte(*password)
+		}
+
+		mlist, err = memberlist.Create(mcfg)
 		if err != nil {
 			level.Error(logger).Log("msg", "Unable to initialize gossip mesh", "err", err)
 			os.Exit(1)
